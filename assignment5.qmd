@@ -12,6 +12,13 @@ library(censusapi)
 library(tidyverse)
 library(magrittr)
 library(factoextra)
+library(dplyr)
+library(stringr)
+library(ggmap)
+library(ggplot2)
+library(lubridate)
+library(corrplot)
+library(RSocrata)
 ```
 
 ## Exploring ACS Data
@@ -46,39 +53,94 @@ head(il_map)
 
 Join the ACS data with the map data. Note that `il_map` has a column `subregion` which includes county names. We need a corresponding variable in the ACS data to join both data sets. This needs some transformations, among which the function `tolower()` might be useful. Call the joined data `acs_map`.
 
+```{r}
+# creating new variable 'subregion' in acs_il_c to match the 'subregion' variable in il_map
+acs_il_c <- acs_il_c %>%
+  mutate(subregion = tolower(str_remove(NAME, " County, Illinois")))
+
+# joining the ACS data with the map data
+acs_map <- inner_join(acs_il_c, il_map, by = "subregion")
+```
+
 After you do this, plot a map of Illinois with Counties colored by per capita income.
 
 ```{r}
 #| fig.height = 6.5, fig.width = 6
 
-# ggplot(acs_map) + 
-# geom_polygon(aes(x = long, y = lat, group = group, fill = income))
+ ggplot(acs_map) + 
+ geom_polygon(aes(x = long, y = lat, group = group, fill = income))
 ```
 
 ## Hierarchical Clustering
 
 We want to find clusters of counties that are similar in their population, average household income and per capita income. First, clean the data so that you have the appropriate variables to use for clustering. Next, create the distance matrix of the cleaned data. This distance matrix can be used to cluster counties, e.g. using the ward method.
 
+```{r}
+# cleaning the data so that I have the appropriate variables to use for clustering
+acs_map_clean <-
+  acs_map %>%
+  select(pop, hh_income,income)
+```
+
+```{r}
+# scaling the data
+scaled_data <- scale(acs_map_clean)
+
+# creating the distance matrix of the cleaned data
+dist_matrix <- dist(acs_map_clean)
+```
+
+```{r}
+# clustering counties using different methods
+hc_ward <- hclust(dist_matrix, method = "ward.D2")
+```
+
 Plot the dendrogram to find a reasonable number of clusters. Draw boxes around the clusters of your cluster solution.
 
+```{r}
+# plotted the dendrogram and found 3 clusters (in red)
+plot(hc_ward, main = "Dendrogram", xlab = "", sub = "", cex = 0.8)
+
+rect.hclust(hc_ward, 
+            k = 3, 
+            border = "red")
+```
+
 Visualize the county clusters on a map. For this task, create a new `acs_map` object that now also includes cluster membership as a new column. This column should be called `cluster`.
+
+```{r}
+clusters <- cutree(hc_ward, k = 3)
+
+# creating a new acs_map object that now also includes cluster membership as a new column 'cluster'
+acs_map <- acs_map %>%
+  mutate(cluster = clusters) %>%
+  select(pop, hh_income,income, cluster, long, lat, group)
+```
+
+```{r}
+# visualizing the county clusters on a map
+#| fig.height = 6.5, fig.width = 6
+
+ ggplot(acs_map) + 
+ geom_polygon(aes(x = long, y = lat, group = group, fill = as.factor(cluster)))
+```
 
 ## Census Tracts
 
 For the next section we need ACS data on a census tract level. We use the same variables as before.
 
 ```{r}
-# acs_il_t <- getCensus(name = "acs/acs5",
-#                     vintage = 2016, 
-#                     vars = c("NAME", "B01003_001E", "B19013_001E", "B19301_001E"),
-#                     region = "tract:*", 
-#                     regionin = "state:17",
-#                     key = cs_key) %<>%
-#             mutate_all(funs(ifelse(.==-666666666, NA, .))) %>%
-#             rename(pop = B01003_001E, 
-#                    hh_income = B19013_001E, 
-#                    income = B19301_001E)
-# head(acs_il_t)
+acs_il_t <- getCensus(name = "acs/acs5",
+                    vintage = 2016,
+                    vars = c("NAME", "B01003_001E", "B19013_001E", "B19301_001E"),
+                    region = "tract:*",
+                    regionin = "state:17",
+                    key = cs_key) %>%
+            mutate_all(funs(ifelse(.==-666666666, NA, .))) %>%
+            rename(pop = B01003_001E,
+                   hh_income = B19013_001E,
+                   income = B19301_001E)
+head(acs_il_t)
 ```
 
 ## k-Means
