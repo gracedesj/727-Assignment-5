@@ -7,7 +7,7 @@ editor: visual
 
 You may work in pairs or individually for this assignment. Make sure you join a group in Canvas if you are working in pairs. Turn in this assignment as an HTML or PDF file to ELMS. Make sure to include the R Markdown or Quarto file that was used to generate it. Include the GitHub link for the repository containing these files.
 
-```{r}
+```{r, message=FALSE}
 library(censusapi)
 library(tidyverse)
 library(magrittr)
@@ -129,7 +129,7 @@ acs_map <- acs_map %>%
 
 For the next section we need ACS data on a census tract level. We use the same variables as before.
 
-```{r}
+```{r, warning = FALSE, message = FALSE}
 acs_il_t <- getCensus(name = "acs/acs5",
                     vintage = 2016,
                     vars = c("NAME", "B01003_001E", "B19013_001E", "B19301_001E"),
@@ -148,6 +148,14 @@ head(acs_il_t)
 As before, clean our data for clustering census tracts based on population, average household income and per capita income.
 
 ```{r}
+# for later on (displaying the most frequent county that can be observed within each cluster)
+acs_il_t_clean2 <-
+  acs_il_t %>%
+  select(pop, hh_income,income, NAME) %>%
+  na.omit()
+```
+
+```{r}
 # cleaning the data so that I have the appropriate variables to use for clustering
 acs_il_t_clean <-
   acs_il_t %>%
@@ -157,7 +165,7 @@ acs_il_t_clean <-
 
 Since we want to use K Means in this section, we start by determining the optimal number of K that results in Clusters with low within but high between variation. Plot within cluster sums of squares for a range of K (e.g. up to 20).
 
-```{r, warning = false}
+```{r, warning = FALSE}
 fviz_nbclust(acs_il_t_clean, #data set we want to use
              kmeans, #cluster method
              method = "wss", #method used for estimating the optimal number of clusters
@@ -168,7 +176,8 @@ Run `kmeans()` for the optimal number of clusters based on the plot above.
 
 ```{r}
 km <- kmeans(acs_il_t_clean, 3, nstart = 20)
-km
+print(km$size)
+print(km$centers)
 ```
 
 Find the mean population, household income and per capita income grouped by clusters. In addition, display the most frequent county that can be observed within each cluster.
@@ -187,19 +196,13 @@ cluster_means <- acs_il_t_clean %>%
   )
 cluster_means
 
-# data with subregion so I can find the most frequent county within each cluster
-acs_il_t_clean2 <-
-  acs_il_t %>%
-  select(pop, hh_income,income, subregion) %>%
-  na.omit()
-
 # adding cluster information to acs_il_t_clean2
 acs_il_t_clean2$cluster <- km$cluster
 
 # finding the most frequent county within each cluster
 most_frequent_county <- acs_il_t_clean2 %>%
   group_by(cluster) %>%
-  summarise(most_frequent_county = names(sort(table(subregion), decreasing = TRUE))[1])
+  summarise(most_frequent_county = names(sort(table(NAME), decreasing = TRUE))[1])
 most_frequent_county
 
 ```
@@ -221,7 +224,7 @@ acs_il_t_clean <- subset(acs_il_t_clean, select = -cluster)
 ```
 
 ```{r}
-for (i in K) {
+for (K in 2:10) {
   cluster_numbers <- automate_km(K, acs_il_t_clean)
   acs_il_t_clean[[paste("cluster_K", K, sep = "_")]] <- cluster_numbers
 }
